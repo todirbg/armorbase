@@ -10,6 +10,7 @@ class Obj8_vtx {
 	public var vtx: iron.math.Vec3 = null;
 	public var nor: iron.math.Vec3 = null;
 	public var tex: iron.math.Vec2 = null;
+	public var name: String = null;
 	
 	public function new(vtx:Vec3, nor:Vec3, tex:Vec2) {
 		this.vtx = vtx;
@@ -27,26 +28,22 @@ class Obj8_axis_angle {
 	public var angle : Float;
 	public function new(x:Float, y:Float, z:Float , angle:Float) {
 			this.vector = new Vec4(x,y,z);
-			this.angle = angle * Math.PI / 180.0;//convert to radians
+			this.angle = angle*(Math.PI/180);//convert to radians
 	}	
 	
 }
 
 class Obj8_Anim {
-	public var translate_static : iron.math.Vec4 = null;
-	public var rotate_static :  iron.math.Quat = null;
-	public var translate_key : iron.math.Vec4 = null;
-	public var rotate_key :  iron.math.Quat = null;
+	public var translate : iron.math.Vec4 = null;
+	public var rotate :  iron.math.Quat = null;
 	public var helper_vec : iron.math.Vec4 = null; 
 	
 	public var parent :  Obj8_Anim = null;
 	
 	public function new(parent: Obj8_Anim) {
 			this.parent = parent;
-			this.translate_static = new Vec4();
-			this.rotate_static = new Quat();
-			this.translate_key = new Vec4();
-			this.rotate_key = new Quat();
+			this.translate = new Vec4();
+			this.rotate = new Quat();
 	}
 }
 
@@ -60,6 +57,7 @@ class Obj8Parser {
 	public var scaleTex = 1.0;
 	public var name = "";
 	public var curObj = 0;
+	public var curObjName = "";
 	
 	var vtxTable: Array<Obj8_vtx> = [];
 	var idxTable: Array<Int> = [];
@@ -97,13 +95,13 @@ class Obj8Parser {
 				var offsetIdx = Std.parseInt(str[2]);
 				var endIdx = startIdx + offsetIdx;
 				var tmpObj = new Array<Obj8_vtx>(); 
-					
+				var name = new String("TRIS_"+str[1]+"_"+str[2]);	
 				//Unoptimize	
 				for (i in startIdx...endIdx) {
 					var vtx = vtxTable[idxTable[i]].clone();
 					tmpObj.push(vtx);
 				}
-
+				tmpObj[0].name = name;
 				objTable.push(tmpObj);
 			}
 		}
@@ -120,6 +118,7 @@ class Obj8Parser {
 		nora = new kha.arrays.Int16Array(objTable[curObj].length * 2);
 		texa = new kha.arrays.Int16Array(objTable[curObj].length * 2);
 
+		curObjName = objTable[curObj][0].name;
 		// Pack positions to (-1, 1) range
 		scalePos = 0.0;		
 		for(v in objTable[curObj]){
@@ -163,7 +162,6 @@ class Obj8Parser {
 			
 			var str = line.split(" ");
 
-
 			if (str[0] == "ANIM_begin"){
 					var anim = new Obj8_Anim(anim_obj);
 					parseAnim(input, anim);
@@ -171,33 +169,31 @@ class Obj8Parser {
 			if (str[0] == "ANIM_rotate_begin"){
 					anim_obj.helper_vec = new Vec4(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]));
 			}	
-			if (str[0] == "ANIM_trans_begin"){
-					anim_obj.helper_vec = new Vec4();
-			}
-			else if (str[0] == "ANIM_rotate_key" && anim_obj.helper_vec == null){
-				//Use anim_obj.helper_vec == null to test if we already paresed one key
-				//Assume first angle is rest pose
+/* 			if (str[0] == "ANIM_trans_begin"){
+					//anim_obj.helper_vec = new Vec4();
+			} */
+			else if (str[0] == "ANIM_rotate_key"){
+				//Look for keyframe 0 if not exist skip
+				if(Std.parseFloat(str[1]) != 0) continue;
 				var angle = Std.parseFloat(str[2]);
 				
 				var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, angle);
 				var q = new Quat();
 				q.fromAxisAngle(axis_angle.vector, axis_angle.angle);
-				anim_obj.rotate_key.mult(q);
-				
-				break;
+				anim_obj.rotate.mult(q);
 				
 			}
-			else if (str[0] == "ANIM_trans_key" && anim_obj.helper_vec == null){
-				//Use anim_obj.helper_vec == null to test if we already paresed one key
+			else if (str[0] == "ANIM_trans_key"){
+				//Look for keyframe 0 if not exist skip
+				if(Std.parseFloat(str[1]) != 0) continue;
 				var trans = new Vec4(Std.parseFloat(str[2]), -Std.parseFloat(str[4]), Std.parseFloat(str[3]));
-				anim_obj.translate_key.add(trans);
-				break;
+				anim_obj.translate.add(trans);
 			}
 			else if (str[0] == "ANIM_trans"){
 				//Assume first position is rest pose
 				var trans = new Vec4(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]));
 
-					anim_obj.translate_static.add(trans);
+					anim_obj.translate.add(trans);
 			}
 			else if (str[0] == "ANIM_rotate"){
 				//Assume first angle is rest pose
@@ -206,27 +202,28 @@ class Obj8Parser {
 
 				var q = new Quat();
 				q.fromAxisAngle(axis_angle.vector, axis_angle.angle);
-				anim_obj.rotate_static.mult(q);				
+				anim_obj.rotate.mult(q);				
 			}
 			else if (str[0] == "TRIS"){
 				var startIdx = Std.parseInt(str[1]);
 				var offsetIdx = Std.parseInt(str[2]);
 				var endIdx = startIdx + offsetIdx;
 				var tmpObj = new Array<Obj8_vtx>(); 
+				var name = new String("TRIS_"+str[1]+"_"+str[2]);
 					
 				//Unoptimize	
 				for (i in startIdx...endIdx) {
 					var vtx = vtxTable[idxTable[i]].clone();
+
 					tmpObj.push(vtx);
 				}
 				
-
+				//Apply transformations
 				var obj = anim_obj;
 				while(true){
+						
 					var mat = Mat4.identity();
-
-					mat.compose(obj.translate_static, obj.rotate_static, new Vec4(1,1,1,1));
-					mat.applyQuat(obj.rotate_key);
+					mat.compose(obj.translate, obj.rotate, new Vec4(1,1,1,1));
 					for(v in tmpObj){
 							v.vtx.applymat(mat);
 					}
@@ -235,14 +232,18 @@ class Obj8Parser {
 					for(v in tmpObj){			
 							v.nor.applymat(mat);
 							v.nor.normalize();
-					}
 
+					}
 					if(obj.parent == null) break;
 					obj = obj.parent;
-				}
-
+				} 
+		
+				tmpObj[0].name = name;			
 				objTable.push(tmpObj);							
 			}
+/* 			else if (str[0] == "ANIM_trans_end" || str[0] == "ANIM_rotate_end"){
+				anim_obj.helper_vec = null;
+			} */
 			else if (str[0] == "ANIM_end"){
 				break;
 			}
