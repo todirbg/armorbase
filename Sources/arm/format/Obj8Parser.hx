@@ -33,18 +33,27 @@ class Obj8_axis_angle {
 	
 }
 
+typedef RotateKey = { value : Float, angle : Float }
+typedef TransKey = { value : Float, vector : Vec4 }
+
 class Obj8_Anim {
-	public var translate : iron.math.Vec4 = null;
-	public var rotate :  iron.math.Quat = null;
+	public var animData : Array<Dynamic> = null;
+	public var transTable : Array<TransKey> = null;
+	public var rotateTable : Array<RotateKey> = null;
 	public var helper_vec : iron.math.Vec4 = null; 
+	public var animOpen: Bool ;
+	public var lineNumber : Int;
+	public var animTransOpen: Bool = false;
+	public var animRotateOpen: Bool = false;
 	
 	public var parent :  Obj8_Anim = null;
 	
-	public function new(parent: Obj8_Anim) {
+	public function new(parent: Obj8_Anim, lineNumber : Int) {
 			this.parent = parent;
-			this.translate = new Vec4();
-			this.rotate = new Quat();
-	}
+			this.animOpen = true;
+			this.lineNumber = lineNumber;
+			this.animData = new Array<Dynamic>();
+	}		
 }
 
 class Obj8Parser {
@@ -67,13 +76,13 @@ class Obj8Parser {
 	public function new(blob: kha.Blob) {
 
 		var input = new haxe.io.BytesInput(blob.bytes);
-
+		var lineNumber:Int = 0;
 		while (input.position < input.length){
 			
 			var line = trimstr(input.readLine());
 			
 			var str = line.split(" ");
-
+			lineNumber = lineNumber + 1;
 			if (str[0] == "VT"){
 			var vtx  = new Obj8_vtx(new Vec3(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2])), new Vec3(Std.parseFloat(str[4]), -Std.parseFloat(str[6]), Std.parseFloat(str[5])), new Vec2(Std.parseFloat(str[7]), 1 - Std.parseFloat(str[8])));
 				vtxTable.push(vtx);
@@ -87,8 +96,11 @@ class Obj8Parser {
 				idxTable.push(Std.parseInt(str[1]));
 			}
 			else if (str[0] == "ANIM_begin"){
-					var anim = new Obj8_Anim(null);
-					parseAnim(input, anim);
+					var anim = new Obj8_Anim(null, lineNumber);
+					parseAnim(input, lineNumber, anim);
+					if(anim.animOpen == true){
+						trace("Obj8Parser: Animation parsing error. Animation at line %i not closed", anim.lineNumber);
+					}
 			}
 			else if (str[0] == "TRIS"){
 				var startIdx = Std.parseInt(str[1]);
@@ -154,55 +166,112 @@ class Obj8Parser {
 		return true;
 	}
 	
-	function parseAnim(input: haxe.io.BytesInput, anim_obj : Obj8_Anim){
+	function parseAnim(input: haxe.io.BytesInput, lineNumber: Int, anim_obj : Obj8_Anim){
 
 		while (input.position < input.length){
 			
 			var line = trimstr(input.readLine());
 			
 			var str = line.split(" ");
-
+			lineNumber = lineNumber + 1;
 			if (str[0] == "ANIM_begin"){
-					var anim = new Obj8_Anim(anim_obj);
-					parseAnim(input, anim);
+					var anim = new Obj8_Anim(anim_obj, lineNumber);
+					parseAnim(input, lineNumber, anim);
+					if(anim.animOpen == true){
+						trace("Obj8Parser: Animation parsing error. Animation beginig at line %i not closed", anim.lineNumber);
+					}
 			}		
 			if (str[0] == "ANIM_rotate_begin"){
 					anim_obj.helper_vec = new Vec4(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]));
+					anim_obj.animRotateOpen = true;
+					anim_obj.rotateTable = new Array<RotateKey>();
 			}	
-/* 			if (str[0] == "ANIM_trans_begin"){
-					//anim_obj.helper_vec = new Vec4();
-			} */
+ 			if (str[0] == "ANIM_trans_begin"){
+					anim_obj.animTransOpen = true;
+					anim_obj.transTable = new Array<TransKey>();
+			}
 			else if (str[0] == "ANIM_rotate_key"){
-				//Look for keyframe 0 if not exist skip
-				if(Std.parseFloat(str[1]) != 0) continue;
 				var angle = Std.parseFloat(str[2]);
-				
-				var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, angle);
-				var q = new Quat();
-				q.fromAxisAngle(axis_angle.vector, axis_angle.angle);
-				anim_obj.rotate.mult(q);
-				
+				var rot:RotateKey = {value: Std.parseFloat(str[1]), angle: angle};
+				anim_obj.rotateTable.push(rot);
 			}
 			else if (str[0] == "ANIM_trans_key"){
-				//Look for keyframe 0 if not exist skip
-				if(Std.parseFloat(str[1]) != 0) continue;
-				var trans = new Vec4(Std.parseFloat(str[2]), -Std.parseFloat(str[4]), Std.parseFloat(str[3]));
-				anim_obj.translate.add(trans);
+				var vec = new Vec4(Std.parseFloat(str[2]), -Std.parseFloat(str[4]), Std.parseFloat(str[3]));
+				var trans:TransKey = {value:Std.parseFloat(str[1]), vector:vec};
+				anim_obj.transTable.push(trans); 
 			}
 			else if (str[0] == "ANIM_trans"){
-				//Assume first position is rest pose
+				//Find the position coresponding to datafef value 0
 				var trans = new Vec4(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]));
+				var trans2 = new Vec4(Std.parseFloat(str[4]), -Std.parseFloat(str[6]), Std.parseFloat(str[5]));
+				if(trans.equals(trans2)){
 
-					anim_obj.translate.add(trans);
+					anim_obj.animData.push(trans);
+				}
+				else{
+					var dr1 = Std.parseFloat(str[7]);
+					var dr2 = Std.parseFloat(str[8]);
+					if(dr1 == 0){
+						anim_obj.animData.push(trans);
+					}
+					else if(dr2 == 0){
+						anim_obj.animData.push(trans2);
+					}
+					else{
+						var range = Math.abs(dr1 - dr2);
+						var diff =  Math.abs(0 - dr1);
+						var ratio = diff/range;
+						var interp = new Vec4();
+						interp.lerp(trans, trans2, ratio);
+						anim_obj.animData.push(interp);
+					}
+				}
 			}
 			else if (str[0] == "ANIM_rotate"){
-				//Assume first angle is rest pose
+				//Find the angle coresponding to datafef value 0
 				var angle = Std.parseFloat(str[4]);
-				var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
+				var angle2 = Std.parseFloat(str[5]);
+				if(angle == angle2){
+					var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
 
-				var q = new Quat();
-				q.fromAxisAngle(axis_angle.vector, axis_angle.angle);
-				anim_obj.rotate.mult(q);				
+					var q = new Quat();
+					q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+					anim_obj.animData.push(q.normalize());
+				}
+
+				else{
+					var dr1 = Std.parseFloat(str[6]);
+					var dr2 = Std.parseFloat(str[7]);
+					if(dr1 == 0){
+						var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
+
+						var q = new Quat();
+						q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+						anim_obj.animData.push(q.normalize());
+					}
+					else if(dr2 == 0){
+						var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle2);
+
+						var q = new Quat();
+						q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+						anim_obj.animData.push(q.normalize());
+					}
+					else{
+						var range = Math.abs(dr1 - dr2);
+						var diff =  Math.abs(0 - dr1);
+						var ratio = diff/range;
+
+						var axis_angle1 = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
+						var axis_angle2 = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle2);
+						var q1 = new Quat();
+						q1.fromAxisAngle(axis_angle1.vector.normalize(), axis_angle1.angle);
+						var q2 = new Quat();
+						q2.fromAxisAngle(axis_angle2.vector.normalize(), axis_angle2.angle);
+						var q = new Quat();
+						q.lerp(q1, q2, ratio);
+						anim_obj.animData.push(q.normalize());
+					}
+				}								
 			}
 			else if (str[0] == "TRIS"){
 				var startIdx = Std.parseInt(str[1]);
@@ -214,44 +283,164 @@ class Obj8Parser {
 				//Unoptimize	
 				for (i in startIdx...endIdx) {
 					var vtx = vtxTable[idxTable[i]].clone();
-
+					
+ 					var obj = anim_obj;
+					while(true){
+						//Apply transforms in backwards order
+						var index = obj.animData.length - 1;
+						while(index >= 0){
+							if(Std.isOfType(obj.animData[index], iron.math.Vec4)){
+								vtx.vtx.add(obj.animData[index]);
+							}else{
+								var mat = Mat4.identity();
+								mat.fromQuat(obj.animData[index]);
+								vtx.vtx.applymat(mat);
+								vtx.nor.applymat(mat);
+								vtx.nor.normalize();
+							}
+							index = index - 1;
+						}
+						if(obj.parent == null) break;
+						obj = obj.parent;
+					}  				
 					tmpObj.push(vtx);
 				}
-				
-				//Apply transformations
-				var obj = anim_obj;
-				while(true){
-						
-					var mat = Mat4.identity();
-					mat.compose(obj.translate, obj.rotate, new Vec4(1,1,1,1));
-					for(v in tmpObj){
-							v.vtx.applymat(mat);
-					}
-					//not shure I need this
-					mat.toRotation();
-					for(v in tmpObj){			
-							v.nor.applymat(mat);
-							v.nor.normalize();
-
-					}
-					if(obj.parent == null) break;
-					obj = obj.parent;
-				} 
 		
 				tmpObj[0].name = name;			
 				objTable.push(tmpObj);							
 			}
-/* 			else if (str[0] == "ANIM_trans_end" || str[0] == "ANIM_rotate_end"){
-				anim_obj.helper_vec = null;
-			} */
+ 			else if (str[0] == "ANIM_trans_end"){
+				if(anim_obj.animTransOpen == false){
+					trace("Obj8Parser: Missing ANIM_trans_begin error at line %i", lineNumber);
+					continue;
+				}
+				anim_obj.animTransOpen = false;
+				
+				//Try to find keyframe 0. If does not exist interpolate.
+				var key1:Float = anim_obj.transTable[0].value;
+				var key2:Float = anim_obj.transTable[anim_obj.transTable.length-1].value;
+				
+				if(key1 == 0){
+					anim_obj.animData.push(anim_obj.transTable[0].vector);
+				}
+				else if(key2 == 0){
+					anim_obj.animData.push(anim_obj.transTable[anim_obj.transTable.length-1].vector);
+				}
+				else if((0 - key1) * key2 > 0){//0 is in range
+					for(i in 0 ... anim_obj.transTable.length - 1){
+						key1 = anim_obj.transTable[i].value;
+						key2 = anim_obj.transTable[i+1].value;
+						if((0 - key1) * key2 > 0){
+							var range = Math.abs(key1 - key2);
+							var diff =  Math.abs(0 - key1);
+							var ratio = diff/range;
+							var interp = new Vec4();
+							interp.lerp(anim_obj.transTable[i].vector, anim_obj.transTable[i+1].vector, ratio);
+							anim_obj.animData.push(interp);
+							break;
+						}
+					}					
+				}			
+				else{//0 is not in range
+					var ind1:Int = 0;
+					var ind2:Int = 1;
+					if(0 < key1){
+						key2 = anim_obj.transTable[1].value;
+					}
+					else if (0 > key2){
+						key1 = anim_obj.transTable[anim_obj.transTable.length-2].value;
+						ind1 = anim_obj.transTable.length-2;
+						ind2 = anim_obj.transTable.length-1;
+					}
+					
+					var range = Math.abs(key1 - key2);
+					var diff =  Math.abs(0 - key1);
+					var ratio = diff/range;
+					var interp = new Vec4();
+					interp.lerp(anim_obj.transTable[ind1].vector, anim_obj.transTable[ind2].vector, ratio);
+					anim_obj.animData.push(interp);		
+				}
+			}
+ 			else if (str[0] == "ANIM_rotate_end"){
+				if(anim_obj.animRotateOpen == false){
+					trace("Obj8Parser: Missing ANIM_rotate_begin error at line %i", lineNumber);
+					continue;
+				}
+				anim_obj.animRotateOpen = false;
+				
+				//Try to find keyframe 0. If does not exist interpolate.
+				var key1:Float = anim_obj.rotateTable[0].value;
+				var key2:Float = anim_obj.rotateTable[anim_obj.rotateTable.length-1].value;
+				
+				if(key1 == 0){
+				var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, anim_obj.rotateTable[0].angle);
+				var q = new Quat();
+				q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+					anim_obj.animData.push(q);
+				}
+				else if(key2 == 0){
+				var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, anim_obj.rotateTable[anim_obj.rotateTable.length-1].angle);
+				var q = new Quat();
+				q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+					anim_obj.animData.push(q);
+				}
+				else if((0 - key1) * key2 > 0){//0 is in range
+					for(i in 0 ... anim_obj.rotateTable.length - 1){
+						key1 = anim_obj.rotateTable[i].value;
+						key2 = anim_obj.rotateTable[i+1].value;
+						if((0 - key1) * key2 > 0){
+							var range = Math.abs(key1 - key2);
+							var diff =  0 - key1;
+							var ratio = diff/range;					
+							
+							var angle = (anim_obj.rotateTable[i].angle + (anim_obj.rotateTable[i+1].angle - anim_obj.rotateTable[i].angle) * ratio);
+							var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, angle);
+							var q = new Quat();
+							q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+							anim_obj.animData.push(q);				
+							
+							break;
+						}
+					}					
+				}			
+				else{//0 is not in range
+					var ind1:Int = 0;
+					var ind2:Int = 1;
+					if(0 < key1){
+						key2 = anim_obj.rotateTable[1].value;
+					}
+					else if (0 > key2){
+						key1 = anim_obj.rotateTable[anim_obj.rotateTable.length-2].value;
+						ind1 = anim_obj.rotateTable.length-2;
+						ind2 = anim_obj.rotateTable.length-1;
+					}
+					
+					var range = Math.abs(key1 - key2);
+					var diff =  (0 - key1);
+					var ratio = diff/range;
+					
+					var angle = (anim_obj.rotateTable[ind1].angle + (anim_obj.rotateTable[ind2].angle - anim_obj.rotateTable[ind1].angle) * ratio);
+					var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, angle);
+					var q = new Quat();
+					q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+					anim_obj.animData.push(q);	
+				}
+			}
 			else if (str[0] == "ANIM_end"){
+				if(anim_obj.animRotateOpen == true){
+					trace("Obj8Parser: ANIM_rotate_begin not closed. Line %i", lineNumber);
+				}	
+				if(anim_obj.animTransOpen == true){
+					trace("Obj8Parser: ANIM_trans_begin not closed. Line %i", lineNumber);
+				}				
+				anim_obj.animOpen = false;
 				break;
 			}
 		}	
 	}
 	
 	function trimstr(str: String) : String{
-	//different exporters put white spaces and tabs all over the place.
+	//different exporters add white spaces and tabs all over the place.
       if (str.length == 0)
           return str;
 
