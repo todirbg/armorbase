@@ -23,16 +23,6 @@ class Obj8_vtx {
 	}
 }
 
-class Obj8_axis_angle {
-	public var vector : iron.math.Vec4 = null;
-	public var angle : Float;
-	public function new(x:Float, y:Float, z:Float , angle:Float) {
-			this.vector = new Vec4(x,y,z);
-			this.angle = angle*(Math.PI/180);//convert to radians
-	}	
-	
-}
-
 typedef RotateKey = { value : Float, angle : Float }
 typedef TransKey = { value : Float, vector : Vec4 }
 
@@ -231,11 +221,11 @@ class Obj8Parser {
 				//Find the angle coresponding to datafef value 0
 				var angle = Std.parseFloat(str[4]);
 				var angle2 = Std.parseFloat(str[5]);
+				var axis = new Vec4(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]));
 				if(angle == angle2){
-					var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
 
 					var q = new Quat();
-					q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+					q.fromAxisAngle(axis.normalize(), angle*(Math.PI/180));
 					anim_obj.animData.push(q.normalize());
 				}
 
@@ -243,17 +233,15 @@ class Obj8Parser {
 					var dr1 = Std.parseFloat(str[6]);
 					var dr2 = Std.parseFloat(str[7]);
 					if(dr1 == 0){
-						var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
 
 						var q = new Quat();
-						q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+						q.fromAxisAngle(axis.normalize(), angle*(Math.PI/180));
 						anim_obj.animData.push(q.normalize());
 					}
 					else if(dr2 == 0){
-						var axis_angle = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle2);
 
 						var q = new Quat();
-						q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+						q.fromAxisAngle(axis.normalize(), angle2*(Math.PI/180));
 						anim_obj.animData.push(q.normalize());
 					}
 					else{
@@ -261,15 +249,11 @@ class Obj8Parser {
 						var diff =  Math.abs(0 - dr1);
 						var ratio = diff/range;
 
-						var axis_angle1 = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle);
-						var axis_angle2 = new Obj8_axis_angle(Std.parseFloat(str[1]), -Std.parseFloat(str[3]), Std.parseFloat(str[2]), angle2);
-						var q1 = new Quat();
-						q1.fromAxisAngle(axis_angle1.vector.normalize(), axis_angle1.angle);
-						var q2 = new Quat();
-						q2.fromAxisAngle(axis_angle2.vector.normalize(), axis_angle2.angle);
-						var q = new Quat();
-						q.lerp(q1, q2, ratio);
-						anim_obj.animData.push(q.normalize());
+							var angle = (angle + (angle2 - angle) * ratio);
+							var q = new Quat();
+							q.fromAxisAngle(axis.normalize(), angle*(Math.PI/180));
+							anim_obj.animData.push(q);							
+						
 					}
 				}								
 			}
@@ -373,30 +357,33 @@ class Obj8Parser {
 				var key2:Float = anim_obj.rotateTable[anim_obj.rotateTable.length-1].value;
 				
 				if(key1 == 0){
-				var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, anim_obj.rotateTable[0].angle);
 				var q = new Quat();
-				q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+				q.fromAxisAngle(anim_obj.helper_vec.normalize(), anim_obj.rotateTable[0].angle*(Math.PI/180));
 					anim_obj.animData.push(q);
 				}
 				else if(key2 == 0){
-				var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, anim_obj.rotateTable[anim_obj.rotateTable.length-1].angle);
 				var q = new Quat();
-				q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+				q.fromAxisAngle(anim_obj.helper_vec.normalize(), anim_obj.rotateTable[anim_obj.rotateTable.length-1].angle*(Math.PI/180));
 					anim_obj.animData.push(q);
 				}
 				else if((0 - key1) * key2 > 0){//0 is in range
 					for(i in 0 ... anim_obj.rotateTable.length - 1){
 						key1 = anim_obj.rotateTable[i].value;
 						key2 = anim_obj.rotateTable[i+1].value;
+						if(key1 == 0){//Keyframe 0 exists in the table
+							var q = new Quat();
+							q.fromAxisAngle(anim_obj.helper_vec.normalize(), anim_obj.rotateTable[i].angle*(Math.PI/180));
+							anim_obj.animData.push(q);	
+							break;
+						}
 						if((0 - key1) * key2 > 0){
 							var range = Math.abs(key1 - key2);
 							var diff =  0 - key1;
 							var ratio = diff/range;					
 							
 							var angle = (anim_obj.rotateTable[i].angle + (anim_obj.rotateTable[i+1].angle - anim_obj.rotateTable[i].angle) * ratio);
-							var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, angle);
 							var q = new Quat();
-							q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+							q.fromAxisAngle(anim_obj.helper_vec.normalize(), angle*(Math.PI/180));
 							anim_obj.animData.push(q);				
 							
 							break;
@@ -420,9 +407,8 @@ class Obj8Parser {
 					var ratio = diff/range;
 					
 					var angle = (anim_obj.rotateTable[ind1].angle + (anim_obj.rotateTable[ind2].angle - anim_obj.rotateTable[ind1].angle) * ratio);
-					var axis_angle = new Obj8_axis_angle(anim_obj.helper_vec.x, anim_obj.helper_vec.y, anim_obj.helper_vec.z, angle);
 					var q = new Quat();
-					q.fromAxisAngle(axis_angle.vector.normalize(), axis_angle.angle);
+					q.fromAxisAngle(anim_obj.helper_vec.normalize(), angle*(Math.PI/180));
 					anim_obj.animData.push(q);	
 				}
 			}
@@ -460,7 +446,4 @@ class Obj8Parser {
       return sb;
 		
 	}
-
-
-
 }
