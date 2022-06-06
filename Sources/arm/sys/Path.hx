@@ -18,7 +18,7 @@ class Path {
 
 	public static var baseColorExt = ["albedo", "alb", "basecol", "basecolor", "diffuse", "diff", "base", "bc", "d", "color", "col"];
 	public static var opacityExt = ["opac", "opacity", "alpha"];
-	public static var normalMapExt = ["normal", "nor", "n", "nrm"];
+	public static var normalMapExt = ["normal", "nor", "n", "nrm", "normalgl"];
 	public static var occlusionExt = ["ao", "occlusion", "ambientOcclusion", "o", "occ"];
 	public static var roughnessExt = ["roughness", "rough", "r", "rgh"];
 	public static var metallicExt = ["metallic", "metal", "metalness", "m", "met"];
@@ -159,7 +159,7 @@ class Path {
 	}
 
 	public static function isFolder(p: String): Bool {
-		return p.indexOf(".") == -1;
+		return p.replace("\\", "/").split("/").pop().indexOf(".") == -1;
 	}
 
 	public static function isProtected(): Bool {

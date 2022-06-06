@@ -77,7 +77,7 @@ class File {
 			done();
 		});
 		#elseif krom_linux
-		Krom.sysCommand('wget -O "' + dstPath + '" ' + url);
+		Krom.sysCommand('wget -O "' + dstPath + '" "' + url + '"');
 		done();
 		#else
 		Krom.sysCommand('curl -L ' + url + ' -o "' + dstPath + '"');
@@ -88,12 +88,12 @@ class File {
 	public static function downloadBytes(url: String, done: Bytes->Void) {
 		var save = (Path.isProtected() ? Krom.savePath() : Path.data() + Path.sep) + "download.bin";
 		File.download(url, save, function() {
+			var bytes: Bytes = null;
 			try {
-				done(Bytes.ofData(Krom.loadBlob(save)));
+				bytes = Bytes.ofData(Krom.loadBlob(save));
 			}
-			catch (e: Dynamic) {
-				done(null);
-			}
+			catch (e: Dynamic) {}
+			done(bytes);
 		});
 	}
 
@@ -135,10 +135,8 @@ class File {
 		}, cloudSizes.get(path));
 	}
 
-	static function initCloud(done: Void->Void) {
-		cloud = [];
-		cloudSizes = [];
-		File.downloadBytes(Config.raw.server, function(bytes: Bytes) {
+	static function initCloudBytes(done: Void->Void, append = "") {
+		File.downloadBytes(Config.raw.server + "/?list-type=2" + append, function(bytes: Bytes) {
 			if (bytes == null) {
 				cloud.set("cloud", []);
 				Console.error(Strings.error5());
@@ -146,7 +144,8 @@ class File {
 			}
 			var files: Array<String> = [];
 			var sizes: Array<Int> = [];
-			for (e in Xml.parse(bytes.toString()).firstElement().elementsNamed("Contents")) {
+			var xml = Xml.parse(bytes.toString());
+			for (e in xml.firstElement().elementsNamed("Contents")) {
 				for (k in e.elementsNamed("Key")) {
 					files.push(k.firstChild().nodeValue);
 				}
@@ -172,7 +171,18 @@ class File {
 					}
 				}
 			}
-			done();
+
+			var isTruncated = xml.firstElement().elementsNamed("IsTruncated").next().firstChild().nodeValue == "true";
+			if (isTruncated) {
+				initCloudBytes(done, "&start-after=" + xml.firstElement().elementsNamed("NextContinuationToken").next().firstChild().nodeValue);
+			}
+			else done();
 		});
+	}
+
+	static function initCloud(done: Void->Void) {
+		cloud = [];
+		cloudSizes = [];
+		initCloudBytes(done);
 	}
 }
